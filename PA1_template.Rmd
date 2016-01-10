@@ -8,18 +8,127 @@ output:
 
 ## Loading and preprocessing the data
 
+Data is located in the active directory, it is unzipped, loaded noting the NAs.  Libraries needed to complete the analysis are also loaded at this time. 
 
+```{r message=FALSE}
+unzip(zipfile="activity.zip")
+data <- read.csv("activity.csv", na.strings = "NA")
+library(dplyr)
+library(ggvis)
+library(lattice)
+```
 
 ## What is mean total number of steps taken per day?
 
+Ignoring NAs for now, we calculate the total number of steps per day and graph it as a histogram.
 
+```{r message=FALSE}
+
+processed <- data %>% 
+        group_by(date) %>%
+        summarise(total = sum(steps, na.rm = TRUE))
+
+processed %>% ggvis(~total) %>% layer_histograms(width = 1000, fill := "orangered") %>% add_axis("x", title = "Value") %>% add_axis("y", title = "Count")
+```
+
+The mean number of steps per day is: `r round(mean(processed$total), digits = 2)`.
+
+The median number of steps per day is: `r median(processed$total)`.
 
 ## What is the average daily activity pattern?
 
+Below is time series plot of the 5-minute intervals (x-axis) and the average number of steps taken, averaged across all days (y-axis).
 
+```{r message=FALSE}
+
+daily <- data %>% 
+        group_by(interval) %>%
+        summarise(average = mean(steps, na.rm = TRUE))
+
+daily %>% ggvis(~interval, ~average) %>% layer_lines(fill := "indigo")
+
+most.active <- daily %>%
+            mutate(rank = rank(desc(average))) %>%
+            filter(rank == 1)
+```
+
+The most active interval on average is `r most.active$interval`, with a daily average of `r most.active$steps`.
 
 ## Imputing missing values
 
+The total number of NAs in the database is: `r sum(is.na(data$steps))`.
 
+We'll create a new dataset with the NAs filled in using the daily average for that interval.  
+
+```{r message=FALSE}
+
+#copy data to new dataframe
+
+data.impute = data
+
+#do a loop to re-write the NAs
+
+for (i in 1:length(data.impute$steps)){
+  
+  if(is.na(data.impute$steps[i]) == TRUE ) {
+    
+    data.impute$steps[i] = filter(daily, interval == data.impute$interval[i])$average
+    
+  }
+  
+}
+
+```
+
+Now that we've done that, let's plot and re-think our analysis. 
+
+```{r message=FALSE}
+impute.processed <- data.impute %>% 
+        group_by(date) %>%
+        summarise(total = sum(steps, na.rm = TRUE))
+
+impute.processed %>% ggvis(~total) %>% layer_histograms(width = 1000, fill := "FireBrick") %>% add_axis("x", title = "Value") %>% add_axis("y", title = "Count")
+
+```
+
+The mean number of steps per day after data impute is: `r round(mean(impute.processed$total), digits = 2)`.
+
+The median number of steps per day is: `r round(median(impute.processed$total), digits = 2)`.
+
+Because we have filled in missing values based on mean values, the median and mean are now much closer.  Recall that earlier there was a large divide between mean and median. It appears that NAs had likely under-represented actual average daily steps. 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Now we'll divide the data by weekday and weekend to see if there are differences in patterns. 
+
+```{r message=FALSE}
+data.impute$dayofweek <-weekdays(as.Date(data.impute$date))
+data.impute$day <- "Weekday"
+
+for (i in 1:length(data.impute$dayofweek)) {
+  if (data.impute$dayofweek[i] == "Saturday") {
+    data.impute$day[i]<-"Weekend"
+  }else if (data.impute$dayofweek[i] == "Sunday") {
+    data.impute$day[i]<-"Weekend"
+  }
+}
+```
+
+Calculate our daily averages again. 
+
+```{r message=FALSE}
+
+daily.impute.mean <- data.impute %>% 
+        group_by(interval, day) %>%
+        summarise(average = mean(steps, na.rm = TRUE))
+
+```
+
+Now we plot the data.
+
+```{r message=FALSE}
+xyplot(average ~ interval | as.factor(day), data = daily.impute.mean, type = "l", layout = c(1, 2), col = c("darkorchid4"), main = "Average Number of Steps by Time Interval (imputing missing values)", xlab = "Five-minute time period", ylab = "Avg number of steps")
+
+```
+
+Weekdays appear to have a morning spike in activity, followed by a more sedentary rest of day.  Weekends appear to be more variable.  They don't have has large a spike, but the overall activity continues throughout the day. 
